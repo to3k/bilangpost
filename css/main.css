@@ -82,6 +82,7 @@ input::placeholder {
 	margin-bottom: 20px;
 }
 .textarea1 {
+	font-size: 18px;
 	background: #333333;
 	color: #ffffff;
 	min-height: 300px;

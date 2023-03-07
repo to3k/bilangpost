@@ -111,7 +111,8 @@
             ?>
             </div>
             <div class="header">Message:</div>
-            <textarea class="textarea1" name="message" placeholder="Write here in your native language..." autocomplete="off" oninput='this.style.height = "";this.style.height = this.scrollHeight + "px"' required><?php echo $message; ?></textarea>
+            <textarea onKeyUp="count_it()" id="textarea" class="textarea1" name="message" placeholder="Write here in your native language..." autocomplete="off" oninput='this.style.height = "";this.style.height = this.scrollHeight + "px"' required><?php echo $message; ?></textarea>
+            <div class="label">Characters: <span id="counter"></span></div>
 
             <div class="header">Your DeepL API key:</div><br>
 
@@ -191,7 +192,9 @@
             $settings = $token.";".$lang1.";".$lang2;
             $set = openssl_encrypt($settings, $cipher_algo, $passphrase);
 ?>
-            <textarea class="textarea1" id="textarea" name="post" autocomplete="off" oninput='this.style.height = "";this.style.height = this.scrollHeight + "px"'><?php echo $post; ?></textarea>
+            <textarea onKeyUp="count_it()" id="textarea" class="textarea1" name="post" autocomplete="off" oninput='this.style.height = "";this.style.height = this.scrollHeight + "px"'><?php echo $post; ?></textarea>
+            <div class="label">Characters: <span id="counter"></span></div>
+            
             <button type="button" class="button button_submit" id="CopyButton" name="CopyButton" onclick="copy()">Copy</button>
             <br><br>
             <div class="label">Next time, use the link given below under which you have your settings saved.</div>
@@ -215,6 +218,13 @@
 
         <?php include("footer.html"); ?>
     </div>
+    
+    <script>
+        function count_it() {
+            document.getElementById('counter').innerHTML = document.getElementById('textarea').value.length;
+        }
+        count_it();
+    </script>
 </body>
 
 </html>

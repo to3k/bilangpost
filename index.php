@@ -415,6 +415,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--text-color);
         }
 
+        .btn-mastodon {
+            background: #6364FF;
+            color: #ffffff;
+            margin-top: 10px;
+        }
+
+        .btn-mastodon:hover {
+            background: #5051cc;
+        }
+
         .cookie-banner {
             position: fixed;
             bottom: -100%;
@@ -662,6 +672,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label for="output_text" data-i18n="lbl_out">Gotowy kompozyt tekstu</label>
             <textarea id="output_text" readonly spellcheck="false"></textarea>
             <button class="action-btn btn-secondary" id="btn_copy" data-i18n="btn_copy">Skopiuj do schowka</button>
+            <button class="action-btn btn-mastodon" id="btn_mastodon_toggle">
+                <span data-i18n="btn_masto_toggle">Opublikuj na Mastodon</span>
+            </button>
+            <div id="masto_workflow_area"
+                style="display:none; margin-top:15px; border-top:1px solid var(--container-border); padding-top:15px;">
+                <div class="form-group" id="masto_selector" style="margin-bottom:0;">
+                    <label data-i18n="lbl_masto_inst">Wskaż instancję:</label>
+                    <div class="custom-select-trigger" id="masto_dropdown_trigger" data-value="">Wybierz serwer...</div>
+                    <div class="custom-options" id="masto_dropdown_opts">
+                        <div class="search-lang">
+                            <input type="text" id="masto_search" data-i18n-ph="ph_masto_search" placeholder="Szukaj...">
+                        </div>
+                        <div class="options-list" id="masto_list"></div>
+                    </div>
+                </div>
+                <!-- Przycisk pojawi się jak wartość instancji ze słownika autouzupełnia będzię znana -->
+                <button class="action-btn btn-mastodon" id="btn_mastodon_publish"
+                    style="display:none; margin-top:15px;">
+                    <span data-i18n="btn_masto_pub">Publikuj</span>
+                </button>
+            </div>
         </div>
 
         <div class="footer-inside">
@@ -727,9 +758,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'lbl_out': 'Gotowy post',
                 'btn_copy': 'Skopiuj do schowka',
                 'btn_copied': 'Skopiowano do schowka',
+                'btn_masto_toggle': 'Opublikuj na Mastodon',
+                'btn_masto_pub': 'Publikuj',
+                'lbl_masto_inst': 'Wskaż instancję:',
+                'ph_masto_search': 'Szukaj...',
+                'masto_sel': 'Wybierz instancję...',
                 'tt_api': 'Skąd wziąć klucz? Załóż bezpłatne konto DeepL API ',
                 'tt_api_link': 'na tej stronie',
-                'cookie_msg': 'Cześć! Ta strona używa ciasteczek (cookies) wyłącznie do dwóch celów: zapamiętania klucza API DeepL, aby nie było konieczności podawania go za każdym razem, i wybranego języka oraz motywu strony. Strona w żaden inny sposób nie śledzi użytkownika, a brak wyrażenia zgody na używanie ciasteczek całkowicie wyłącza tę funkcjonalność.',
+                'cookie_msg': 'Cześć! Ta strona używa ciasteczek (cookies) wyłącznie do celów funkcjonalnych: zapamiętania klucza API DeepL, instancji Mastodon do ułatwienia wysyłania postów oraz wybranego języka i motywu strony. Strona w żaden inny sposób nie śledzi użytkownika, a brak wyrażenia zgody na używanie ciasteczek całkowicie wyłącza te funkcjonalności.',
                 'cookie_accept': 'Wyrażam zgodę',
                 'cookie_decline': 'Nie wyrażam zgody',
                 'f_cc': 'Narzędzie dostępne na licencji',
@@ -752,9 +788,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'lbl_out': 'Ready post',
                 'btn_copy': 'Copy to clipboard',
                 'btn_copied': 'Copied to clipboard',
+                'btn_masto_toggle': 'Publish on Mastodon',
+                'btn_masto_pub': 'Publish',
+                'lbl_masto_inst': 'Choose your instance:',
+                'ph_masto_search': 'Search...',
+                'masto_sel': 'Select instance...',
                 'tt_api': 'How to obtain the key? Create a free DeepL API account ',
                 'tt_api_link': 'on this webpage',
-                'cookie_msg': 'Hello there! This site uses cookies purely for functional comfort: memory of stored DeepL API key to limit continuous copy-pasting, preserving theme and language settings. Zero external analytical tracking invoked here. If refused we maintain zero footprint.',
+                'cookie_msg': 'Hello there! This site uses cookies purely for functional comfort: memory of stored DeepL API key, Mastodon instances to facilitate sending posts, selected language and theme settings. The site does not track the user in any other way, and the refusal to use cookies completely disables these functionalities.',
                 'cookie_accept': 'I agree',
                 'cookie_decline': 'I refuse',
                 'f_cc': 'Creation published operating under authority of',
@@ -810,6 +851,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     trigger.innerHTML = `${emoji} ${name}`;
                 }
             });
+
+            const mTrigger = document.getElementById('masto_dropdown_trigger');
+            if (mTrigger && !mTrigger.getAttribute('data-value')) {
+                mTrigger.innerText = i18n[uiLang]['masto_sel'];
+            }
         }
 
         // Tłumaczenie przycisku (dla obsługi w locie przełączania i wywołania na starcie zapisanego stanu ze startu)
@@ -996,6 +1042,131 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } finally {
                 btnT.disabled = false; loader.style.display = 'none';
             }
+        });
+
+        // Mastodon UI & Logic
+        const popularMastodonInstances = [
+            'mastodon.social', 'mastodon.world', 'mstdn.social', 'infosec.exchange',
+            'fosstodon.org', 'techhub.social', 'universeodon.com', 'hachyderm.io',
+            'social.network.europa.eu', 'pol.social', 'mastodon.pl', 'szmer.info', '101010.pl'
+        ];
+
+        function checkPublishBtn() {
+            const trigger = document.getElementById('masto_dropdown_trigger');
+            const ptBtn = document.getElementById('btn_mastodon_publish');
+            if (trigger.getAttribute('data-value')) {
+                ptBtn.style.display = 'block';
+            }
+        }
+
+        function renderMastoOptions(filter = '') {
+            const listEl = document.getElementById('masto_list');
+            listEl.innerHTML = '';
+            const f = filter.toLowerCase().trim();
+
+            const cookieStr = getCookie('mastodon_instances');
+            let historyList = [];
+            try { if (cookieStr && cookiesAccepted === '1') historyList = JSON.parse(cookieStr); } catch (e) { }
+
+            let combined = [...historyList];
+            popularMastodonInstances.forEach(inst => {
+                if (!combined.includes(inst)) combined.push(inst);
+            });
+
+            combined.forEach(inst => {
+                if (inst.toLowerCase().includes(f)) {
+                    let isHistory = historyList.includes(inst);
+                    let div = document.createElement('div');
+                    div.className = 'option-item';
+                    div.innerHTML = `<span>${isHistory ? '⭐' : '🐘'}</span> <span>${inst}</span>`;
+                    div.addEventListener('click', () => {
+                        const trigger = document.getElementById('masto_dropdown_trigger');
+                        trigger.setAttribute('data-value', inst);
+                        trigger.innerHTML = `${isHistory ? '⭐' : '🐘'} ${inst}`;
+                        document.getElementById('masto_dropdown_opts').classList.remove('open');
+                        trigger.classList.remove('active');
+                        checkPublishBtn();
+                    });
+                    listEl.appendChild(div);
+                }
+            });
+
+            if (f.includes('.') && !combined.includes(f)) {
+                let div = document.createElement('div');
+                div.className = 'option-item';
+                div.style.color = 'var(--input-focus)';
+                div.innerHTML = `<span>⚙️</span> <span>Użyj: ${f}</span>`;
+                div.addEventListener('click', () => {
+                    const trigger = document.getElementById('masto_dropdown_trigger');
+                    trigger.setAttribute('data-value', f);
+                    trigger.innerHTML = `⚙️ ${f}`;
+                    document.getElementById('masto_dropdown_opts').classList.remove('open');
+                    trigger.classList.remove('active');
+                    checkPublishBtn();
+                });
+                listEl.appendChild(div);
+            }
+        }
+
+        const mTrigger = document.getElementById('masto_dropdown_trigger');
+        const mOpts = document.getElementById('masto_dropdown_opts');
+        const mSearch = document.getElementById('masto_search');
+
+        // Init Masto Defaults
+        const mCookieStr = getCookie('mastodon_instances');
+        let initialHList = [];
+        try { if (mCookieStr && cookiesAccepted === '1') initialHList = JSON.parse(mCookieStr); } catch (e) { }
+        if (initialHList.length > 0) {
+            mTrigger.setAttribute('data-value', initialHList[0]);
+            mTrigger.innerHTML = `⭐ ${initialHList[0]}`;
+        }
+
+        renderMastoOptions('');
+
+        document.getElementById('btn_mastodon_toggle').addEventListener('click', () => {
+            const area = document.getElementById('masto_workflow_area');
+            const isHidden = area.style.display === 'none';
+            area.style.display = isHidden ? 'block' : 'none';
+            if (isHidden) checkPublishBtn();
+        });
+
+        mTrigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = mOpts.classList.contains('open');
+            document.querySelectorAll('.custom-options').forEach(o => o.classList.remove('open'));
+            document.querySelectorAll('.custom-select-trigger').forEach(o => o.classList.remove('active'));
+            if (!isOpen) { mOpts.classList.add('open'); mTrigger.classList.add('active'); mSearch.focus(); }
+        });
+        mSearch.addEventListener('input', (e) => renderMastoOptions(e.target.value));
+        mSearch.addEventListener('click', (e) => e.stopPropagation());
+
+        document.getElementById('btn_mastodon_publish').addEventListener('click', () => {
+            const outText = document.getElementById('output_text').value;
+            if (!outText) {
+                showError(uiLang === 'pl' ? 'Pole jest puste. Przetłumacz najpierw fragment by publikować na Mastodonie.' : 'Text field is empty. Translate to publish on Mastodon.');
+                return;
+            }
+
+            const cookieStr = getCookie('mastodon_instances');
+            let historyList = [];
+            try { if (cookieStr && cookiesAccepted === '1') historyList = JSON.parse(cookieStr); } catch (e) { }
+
+            let triggerVal = mTrigger.getAttribute('data-value');
+
+            if (!triggerVal) {
+                showError(uiLang === 'pl' ? 'Wybierz swój serwer!' : 'Select your server!');
+                return;
+            }
+
+            if (cookiesAccepted === '1') {
+                historyList = historyList.filter(i => i !== triggerVal);
+                historyList.unshift(triggerVal);
+                if (historyList.length > 3) historyList.pop();
+                setCookie('mastodon_instances', JSON.stringify(historyList), 365);
+            }
+
+            const finalUrl = `https://${triggerVal}/share?text=${encodeURIComponent(outText)}`;
+            window.open(finalUrl, '_blank', 'noopener,noreferrer');
         });
 
         // Kopiowanie do schowka
